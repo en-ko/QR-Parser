@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>QR Parametre Okuyucu</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/zxing-js/0.18.6/index.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --surface2: #1a1a26;
+    --border: #2a2a3d;
+    --accent: #00e5ff;
+    --accent2: #ff6b35;
+    --text: #e8e8f0;
+    --text-dim: #6b6b8a;
+    --success: #00ff88;
+    --error: #ff3366;
+    --warn: #ffaa00;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 16px;
+  }
+
+  /* Header */
+  .header {
+    padding: 20px 0 16px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+
+  .header-tag {
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .header h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--text);
+    line-height: 1.2;
+  }
+
+  .header h1 span {
+    color: var(--accent);
+  }
+
+  /* Scanner section */
+  .scanner-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+
+  .scanner-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .scanner-title {
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+
+  #video-wrapper {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    background: #000;
+    display: none;
+  }
+
+  #video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* Scanning overlay */
+  .scan-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+
+  .scan-frame {
+    width: 70%;
+    aspect-ratio: 1;
+    position: relative;
+  }
+
+  .scan-frame::before,
+  .scan-frame::after,
+  .scan-frame .corner-br,
+  .scan-frame .corner-bl {
+    content: '';
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    border-color: var(--accent);
+    border-style: solid;
+  }
+
+  .scan-frame::before { top: 0; left: 0; border-width: 3px 0 0 3px; }
+  .scan-frame::after { top: 0; right: 0; border-width: 3px 3px 0 0; }
+  .scan-frame .corner-br { bottom: 0; right: 0; border-width: 0 3px 3px 0; }
+  .scan-frame .corner-bl { bottom: 0; left: 0; border-width: 0 0 3px 3px; }
+
+  .scan-line {
+    position: absolute;
+    left: 10%;
+    right: 10%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    animation: scanline 2s linear infinite;
+    top: 0;
+  }
+
+  @keyframes scanline {
+    0% { top: 10%; }
+    100% { top: 90%; }
+  }
+
+  .scanner-placeholder {
+    padding: 40px 20px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .qr-icon {
+    width: 64px;
+    height: 64px;
+    opacity: 0.2;
+  }
+
+  .placeholder-text {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+
+  /* Buttons */
+  .btn-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .btn {
+    padding: 12px 8px;
+    border-radius: 8px;
+    border: none;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #000;
+  }
+
+  .btn-primary:active { transform: scale(0.97); background: #00b8cc; }
+
+  .btn-secondary {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+
+  .btn-secondary:active { transform: scale(0.97); }
+
+  .btn-danger {
+    background: var(--error);
+    color: #fff;
+    grid-column: 1 / -1;
+  }
+
+  .btn-danger:active { transform: scale(0.97); }
+
+  /* Status bar */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: var(--surface2);
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-size: 11px;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    min-height: 38px;
+  }
+
+  .status-bar.success { border-color: var(--success); color: var(--success); }
+  .status-bar.error { border-color: var(--error); color: var(--error); }
+  .status-bar.scanning { border-color: var(--accent); color: var(--accent); }
+
+  .status-icon { font-size: 14px; }
+
+  /* Results */
+  #results { display: none; }
+
+  .results-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  .results-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .results-meta {
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+  }
+
+  /* Info cards */
+  .info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .info-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+  }
+
+  .info-card.accent { border-color: var(--accent); }
+
+  .info-label {
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .info-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .info-value.small { font-size: 13px; }
+
+  /* Filter bar */
+  .filter-bar {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .filter-bar::-webkit-scrollbar { display: none; }
+
+  .filter-btn {
+    flex-shrink: 0;
+    padding: 6px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+
+  .filter-btn.active {
+    background: var(--accent);
+    color: #000;
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+
+  /* Search */
+  .search-box {
+    position: relative;
+    margin-bottom: 12px;
+  }
+
+  .search-input {
+    width: 100%;
+    padding: 10px 12px 10px 36px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .search-input:focus { border-color: var(--accent); }
+  .search-input::placeholder { color: var(--text-dim); }
+
+  .search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+
+  /* Param list */
+  .param-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .param-item {
+    display: flex;
+    align-items: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    gap: 10px;
+    transition: border-color 0.15s;
+    animation: fadeIn 0.2s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .param-item:active { border-color: var(--accent); }
+
+  .param-no {
+    font-size: 10px;
+    color: var(--text-dim);
+    min-width: 36px;
+    letter-spacing: 1px;
+  }
+
+  .param-val {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
+  }
+
+  .param-val.no-access {
+    color: var(--text-dim);
+    font-size: 11px;
+    font-weight: 400;
+  }
+
+  .param-badge {
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 1px;
+    font-weight: 600;
+  }
+
+  .badge-ok { background: rgba(0,255,136,0.1); color: var(--success); }
+  .badge-na { background: rgba(107,107,138,0.1); color: var(--text-dim); }
+
+  /* Device code section */
+  .section-title {
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--accent2);
+    text-transform: uppercase;
+    margin: 20px 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .device-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+
+  .device-cell {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 4px;
+    text-align: center;
+  }
+
+  .device-cell-idx {
+    font-size: 8px;
+    color: var(--text-dim);
+    margin-bottom: 2px;
+  }
+
+  .device-cell-val {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent2);
+  }
+
+  /* File input hidden */
+  #file-input { display: none; }
+
+  /* Loading */
+  .loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--accent);
+  }
+
+  .spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(0,229,255,0.2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .empty-state {
+    text-align: center;
+    padding: 24px;
+    color: var(--text-dim);
+    font-size: 11px;
+  }
+
+  /* Canvas for processing */
+  #canvas { display: none; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <div class="header-tag">// Modbus QR Scanner</div>
+    <h1>PARAM <span>READER</span></h1>
+  </div>
+
+  <!-- Scanner Card -->
+  <div class="scanner-card">
+    <div class="scanner-header">
+      <div class="dot" id="status-dot"></div>
+      <div class="scanner-title">Kamera / Görsel</div>
+    </div>
+
+    <div id="video-wrapper">
+      <video id="video" playsinline autoplay muted></video>
+      <div class="scan-overlay">
+        <div class="scan-frame">
+          <div class="corner-br"></div>
+          <div class="corner-bl"></div>
+          <div class="scan-line"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scanner-placeholder" id="placeholder">
+      <svg class="qr-icon" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="4" y="4" width="24" height="24" rx="2" stroke="currentColor" stroke-width="3"/>
+        <rect x="10" y="10" width="12" height="12" rx="1" fill="currentColor"/>
+        <rect x="36" y="4" width="24" height="24" rx="2" stroke="currentColor" stroke-width="3"/>
+        <rect x="42" y="10" width="12" height="12" rx="1" fill="currentColor"/>
+        <rect x="4" y="36" width="24" height="24" rx="2" stroke="currentColor" stroke-width="3"/>
+        <rect x="10" y="42" width="12" height="12" rx="1" fill="currentColor"/>
+        <rect x="36" y="36" width="8" height="8" rx="1" fill="currentColor"/>
+        <rect x="48" y="36" width="8" height="8" rx="1" fill="currentColor"/>
+        <rect x="36" y="48" width="8" height="8" rx="1" fill="currentColor"/>
+        <rect x="48" y="48" width="8" height="8" rx="1" fill="currentColor"/>
+      </svg>
+      <div class="placeholder-text">Kamerayı başlat veya<br>fotoğraf yükle</div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btn-camera" onclick="startCamera()">
+        📷 Kamera
+      </button>
+      <button class="btn btn-secondary" onclick="document.getElementById('file-input').click()">
+        🖼 Yükle
+      </button>
+      <button class="btn btn-danger" id="btn-stop" onclick="stopCamera()" style="display:none">
+        ⏹ Durdur
+      </button>
+    </div>
+    <input type="file" id="file-input" accept="image/*" onchange="handleFile(event)">
+  </div>
+
+  <!-- Status -->
+  <div class="status-bar" id="status-bar">
+    <span class="status-icon">💤</span>
+    <span id="status-text">Hazır — kamera veya görsel seç</span>
+  </div>
+
+  <canvas id="canvas"></canvas>
+
+  <!-- Results -->
+  <div id="results">
+    <!-- Info Grid -->
+    <div class="info-grid">
+      <div class="info-card accent">
+        <div class="info-label">Parametre</div>
+        <div class="info-value" id="res-param-count">—</div>
+      </div>
+      <div class="info-card">
+        <div class="info-label">Erişilebilir</div>
+        <div class="info-value" id="res-accessible">—</div>
+      </div>
+      <div class="info-card">
+        <div class="info-label">SW Ver</div>
+        <div class="info-value small" id="res-sw">—</div>
+      </div>
+      <div class="info-card">
+        <div class="info-label">BL Ver</div>
+        <div class="info-value small" id="res-bl">—</div>
+      </div>
+    </div>
+
+    <!-- Filter + Search -->
+    <div class="filter-bar">
+      <button class="filter-btn active" onclick="setFilter('all', this)">Tümü</button>
+      <button class="filter-btn" onclick="setFilter('accessible', this)">Erişilebilir</button>
+      <button class="filter-btn" onclick="setFilter('noaccess', this)">Erişim Yok</button>
+    </div>
+
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input class="search-input" type="text" id="search-input" placeholder="P001 veya değer ara..." oninput="renderParams()">
+    </div>
+
+    <!-- Param list -->
+    <div class="param-list" id="param-list"></div>
+
+    <!-- Device Code -->
+    <div class="section-title">Device Code</div>
+    <div class="device-grid" id="device-grid"></div>
+  </div>
+
+</div>
+
+<script>
+let stream = null;
+let scanning = false;
+let animFrame = null;
+let codeReader = null;
+let parsedData = null;
+let currentFilter = 'all';
+
+// ── ZXing setup ──────────────────────────────────────────────
+function getHints() {
+  try {
+    const hints = new Map();
+    hints.set(2, [ZXing.BarcodeFormat.QR_CODE]);   // POSSIBLE_FORMATS
+    hints.set(3, true);                              // TRY_HARDER
+    return hints;
+  } catch(e) { return undefined; }
+}
+
+// ── Camera ───────────────────────────────────────────────────
+async function startCamera() {
+  try {
+    setStatus('scanning', '⏳', 'Kamera açılıyor...');
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+    });
+    const video = document.getElementById('video');
+    video.srcObject = stream;
+    await video.play();
+
+    document.getElementById('video-wrapper').style.display = 'block';
+    document.getElementById('placeholder').style.display = 'none';
+    document.getElementById('btn-stop').style.display = 'flex';
+    document.getElementById('btn-camera').style.display = 'none';
+
+    scanning = true;
+    setStatus('scanning', '🔍', 'QR bekleniyor...');
+    scanLoop();
+  } catch(e) {
+    setStatus('error', '❌', 'Kamera hatası: ' + e.message);
+  }
+}
+
+function stopCamera() {
+  scanning = false;
+  if (animFrame) cancelAnimationFrame(animFrame);
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null;
+
+  document.getElementById('video-wrapper').style.display = 'none';
+  document.getElementById('placeholder').style.display = 'flex';
+  document.getElementById('btn-stop').style.display = 'none';
+  document.getElementById('btn-camera').style.display = 'flex';
+  setStatus('', '💤', 'Durduruldu');
+}
+
+function scanLoop() {
+  if (!scanning) return;
+  const video = document.getElementById('video');
+  if (video.readyState === video.HAVE_ENOUGH_DATA) {
+    const canvas = document.getElementById('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0);
+    tryDecode(canvas);
+  }
+  animFrame = requestAnimationFrame(scanLoop);
+}
+
+// ── File upload ───────────────────────────────────────────────
+function handleFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  setStatus('scanning', '⏳', 'Görsel işleniyor...');
+
+  const img = new Image();
+  const url = URL.createObjectURL(file);
+  img.onload = () => {
+    const canvas = document.getElementById('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    URL.revokeObjectURL(url);
+    tryDecode(canvas);
+    e.target.value = '';
+  };
+  img.src = url;
+}
+
+// ── Decode ────────────────────────────────────────────────────
+function tryDecode(canvas) {
+  try {
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+    // Try ZXing
+    const hints = getHints();
+    const reader = new ZXing.MultiFormatReader();
+    if (hints) reader.setHints(hints);
+
+    const luminance = new ZXing.RGBLuminanceSource(imageData.data, canvas.width, canvas.height);
+    const binarizer = new ZXing.HybridBinarizer(luminance);
+    const bitmap = new ZXing.BinaryBitmap(binarizer);
+
+    const result = reader.decode(bitmap);
+    if (result) {
+      const raw = result.getRawBytes();
+      if (raw && raw.length > 0) {
+        const bytes = new Uint8Array(raw);
+        onDecoded(bytes);
+        return;
+      }
+      // Fallback: text as bytes
+      const text = result.getText();
+      const enc = new TextEncoder();
+      onDecoded(enc.encode(text));
+    }
+  } catch(e) {
+    // NotFoundException is normal during scan — silently continue
+    if (e && e.name !== 'NotFoundException' && scanning === false) {
+      setStatus('error', '❌', 'Decode hatası: ' + (e.message || e));
+    }
+  }
+}
+
+// ── Parse binary ──────────────────────────────────────────────
+function onDecoded(bytes) {
+  if (scanning) {
+    stopCamera();
+  }
+
+  setStatus('success', '✅', `Decode edildi — ${bytes.length} byte`);
+
+  // pyzbar gibi UTF-8 → latin-1 dönüşümü
+  // ZXing raw bytes kullandığı için direkt olmalı, ama kontrol edelim
+  let data = bytes;
+
+  const EXTRA = 34;
+  const numShorts = Math.floor(data.length / 2);
+
+  if (numShorts < EXTRA) {
+    setStatus('error', '❌', 'Veri çok kısa, parse edilemiyor');
+    return;
+  }
+
+  const paramCount = numShorts - EXTRA;
+  const params = [];
+  for (let i = 0; i < numShorts; i++) {
+    const lo = data[i * 2];
+    const hi = data[i * 2 + 1];
+    let val = (hi << 8) | lo;
+    if (val >= 0x8000) val -= 0x10000; // signed
+    params.push(val);
+  }
+
+  const deviceCode = params.slice(paramCount, paramCount + 32);
+  const swVer = params[paramCount + 32];
+  const blVer = params[paramCount + 33];
+  const paramList = params.slice(0, paramCount);
+
+  parsedData = { paramList, deviceCode, swVer, blVer, paramCount };
+  renderResults();
+}
+
+// ── Render ────────────────────────────────────────────────────
+function renderResults() {
+  const { paramList, deviceCode, swVer, blVer, paramCount } = parsedData;
+  const accessible = paramList.filter(v => v !== -1).length;
+
+  document.getElementById('res-param-count').textContent = paramCount;
+  document.getElementById('res-accessible').textContent = accessible;
+  document.getElementById('res-sw').textContent = swVer;
+  document.getElementById('res-bl').textContent = blVer;
+
+  // Device code
+  const dg = document.getElementById('device-grid');
+  dg.innerHTML = deviceCode.map((v, i) => `
+    <div class="device-cell">
+      <div class="device-cell-idx">[${i}]</div>
+      <div class="device-cell-val">${v}</div>
+    </div>
+  `).join('');
+
+  document.getElementById('results').style.display = 'block';
+  renderParams();
+}
+
+function setFilter(f, btn) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderParams();
+}
+
+function renderParams() {
+  if (!parsedData) return;
+  const { paramList } = parsedData;
+  const query = document.getElementById('search-input').value.toLowerCase().trim();
+  const list = document.getElementById('param-list');
+
+  const items = paramList.map((val, i) => ({ no: i + 1, val })).filter(({ no, val }) => {
+    if (currentFilter === 'accessible' && val === -1) return false;
+    if (currentFilter === 'noaccess' && val !== -1) return false;
+    if (query) {
+      const noStr = `p${String(no).padStart(3, '0')}`;
+      if (!noStr.includes(query) && !String(val).includes(query)) return false;
+    }
+    return true;
+  });
+
+  if (items.length === 0) {
+    list.innerHTML = '<div class="empty-state">Sonuç bulunamadı</div>';
+    return;
+  }
+
+  list.innerHTML = items.map(({ no, val }) => {
+    const isNA = val === -1;
+    return `
+      <div class="param-item">
+        <div class="param-no">P${String(no).padStart(3, '0')}</div>
+        <div class="param-val ${isNA ? 'no-access' : ''}">${isNA ? 'erişim yok' : val}</div>
+        <div class="param-badge ${isNA ? 'badge-na' : 'badge-ok'}">${isNA ? 'N/A' : 'OK'}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function setStatus(type, icon, text) {
+  const bar = document.getElementById('status-bar');
+  bar.className = 'status-bar ' + type;
+  document.getElementById('status-icon') && (document.getElementById('status-icon').textContent = icon);
+  bar.innerHTML = `<span class="status-icon">${icon}</span><span>${text}</span>`;
+}
+</script>
+</body>
+</html>
